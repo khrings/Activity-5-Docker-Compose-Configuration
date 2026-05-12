@@ -36,4 +36,4 @@ RUN composer install --no-interaction --no-progress --optimize-autoloader
 RUN chown -R www-data:www-data var
 
 # Expose Apache port 80
-EXPOSE 80                            
+EXPOSE 80
