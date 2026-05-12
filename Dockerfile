@@ -1,56 +1,39 @@
+# Use official PHP Apache image
 FROM php:8.3-apache
 
-# Install system dependencies
+# Install system dependencies + PHP extensions
 RUN apt-get update && apt-get install -y \
-    git \
-    curl \
+    libpq-dev \
+    libzip-dev \
     zip \
     unzip \
-    libzip-dev \
-    libpq-dev \
-    && docker-php-ext-install \
-    pdo \
-    pdo_mysql \
-    zip \
+    && docker-php-ext-install pdo_pgsql pdo_mysql zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-
-# Set working directory
-WORKDIR /app
-
-# Enable Apache mod_rewrite for Symfony routing
+# Enable Apache rewrite module (Symfony routing needs this)
 RUN a2enmod rewrite
 
-# Copy application code
-COPY . /app/
+# Set Apache document root to Symfony public folder
+ENV APACHE_DOCUMENT_ROOT /var/www/html/public
 
-# Install PHP dependencies
-RUN composer install --optimize-autoloader
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
+    && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
-# Set permissions
-RUN chown -R www-data:www-data /app/var /app/public
+# Set working directory
+WORKDIR /var/www/html
 
-# Create Apache configuration for Symfony
-RUN echo '<VirtualHost *:8000>\n\
-    ServerName localhost\n\
-    DocumentRoot /app/public\n\
-    <Directory /app/public>\n\
-    AllowOverride All\n\
-    Require all granted\n\
-    RewriteEngine On\n\
-    RewriteCond %{REQUEST_FILENAME} !-f\n\
-    RewriteCond %{REQUEST_FILENAME} !-d\n\
-    RewriteRule ^(.*)$ index.php [QSA,L]\n\
-    </Directory>\n\
-    </VirtualHost>' > /etc/apache2/sites-available/000-default.conf
+# Copy project files
+COPY . .
 
-# Listen on port 8000
-RUN sed -i 's/Listen 80/Listen 8000/' /etc/apache2/ports.conf
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-EXPOSE 8000
+# Install Symfony dependencies
+RUN composer install --no-interaction --no-progress --optimize-autoloader
 
-CMD ["apache2-foreground"]
-                            
+# Fix permissions
+RUN chown -R www-data:www-data var
+
+# Expose Apache port 80
+EXPOSE 80                            
